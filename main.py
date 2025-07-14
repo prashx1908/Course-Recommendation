@@ -194,13 +194,13 @@ def parse_work_roles_param(work_roles_param):
 # Enhanced recommendation logic with proper work experience weighting
 def recommend_course_with_work(education, work_experiences, target, 
                              direct_threshold=100, achievable_threshold=70, 
-                             bridge_threshold=50, minimum_threshold=30):
+                             bridge_threshold=40, minimum_threshold=30):
     """
-    Enhanced recommendation logic following the specified flow:
+    Refined recommendation logic:
     1. Direct Match (100%) - Education or Work Experience exactly matches target
     2. High Relevancy (≥70%) - At least one background has high relevancy to target
-    3. Bridge Programs (50-69%) - Find intermediate programs between backgrounds and target
-    4. Fallback (<50%) - Show best available path (prioritize work exp with more years)
+    3. Bridge Programs (40 < score < 70) - Find intermediate programs between backgrounds and target
+    4. Fallback (≤40) - Show best available path (prioritize work exp with more years)
     """
     
     # Map work experiences to specializations
@@ -241,8 +241,8 @@ def recommend_course_with_work(education, work_experiences, target,
             work_scores.append((w['spec'], score, w['years'], w['original_role']))
     
     # 1. DIRECT MATCH (100% match)
-    # Check education first
     if education == target or edu_score >= direct_threshold:
+        years_text = f" ({years} years)" if years > 0 else ""
         return {
             "match_type": "direct",
             "category": "Direct Match",
@@ -308,7 +308,9 @@ def recommend_course_with_work(education, work_experiences, target,
             "source": "education" if best[0] == "Education" else "work_experience"
         }
     
-    # 3. BRIDGE PROGRAMS (intermediate programs between backgrounds and target)
+    # Find the best relevancy from all backgrounds
+    best_bg_score = max([edu_score] + [w[1] for w in work_scores]) if work_scores else edu_score
+    # 3. BRIDGE PROGRAMS (40 < score < 70)
     bridge_scores = {}
     
     # Create weighted backgrounds for bridge calculation
@@ -328,43 +330,44 @@ def recommend_course_with_work(education, work_experiences, target,
         weighted_backgrounds.append((w['spec'], weight))
     
     # Calculate bridge scores for each potential intermediate program
-    for prog in df.columns:
-        # Skip if program is same as any background or target
-        if prog == education or prog == target:
-            continue
-        if any(w['spec'] == prog for w in mapped_work_specs):
-            continue
-        
-        # Score from bridge program to target
-        if prog in df.index and target in df.columns:
-            to_target_value = df.loc[prog, target]
-            if isinstance(to_target_value, pd.Series):
-                to_target_value = to_target_value.iloc[0]
-            to_target = float(to_target_value)
-        else:
-            continue
-        
-        # Weighted score from backgrounds to bridge program
-        weighted_bg_score = 0
-        total_weight = 0
-        
-        for bg_spec, weight in weighted_backgrounds:
-            if prog in df.index and bg_spec in df.columns:
-                bg_value = df.loc[prog, bg_spec]
-                if isinstance(bg_value, pd.Series):
-                    bg_value = bg_value.iloc[0]
-                bg_score = float(bg_value)
-                weighted_bg_score += bg_score * weight
-                total_weight += weight
-        
-        if total_weight > 0:
-            avg_bg_score = weighted_bg_score / total_weight
+    if best_bg_score > bridge_threshold and best_bg_score < achievable_threshold:
+        for prog in df.columns:
+            # Skip if program is same as any background or target
+            if prog == education or prog == target:
+                continue
+            if any(w['spec'] == prog for w in mapped_work_specs):
+                continue
             
-            # Only consider as bridge if both directions have reasonable scores
-            if to_target >= bridge_threshold and avg_bg_score >= bridge_threshold:
-                # Use harmonic mean to favor programs good at both bridging and leading to target
-                bridge_score = 2 * (to_target * avg_bg_score) / (to_target + avg_bg_score)
-                bridge_scores[prog] = bridge_score
+            # Score from bridge program to target
+            if prog in df.index and target in df.columns:
+                to_target_value = df.loc[prog, target]
+                if isinstance(to_target_value, pd.Series):
+                    to_target_value = to_target_value.iloc[0]
+                to_target = float(to_target_value)
+            else:
+                continue
+            
+            # Weighted score from backgrounds to bridge program
+            weighted_bg_score = 0
+            total_weight = 0
+            
+            for bg_spec, weight in weighted_backgrounds:
+                if prog in df.index and bg_spec in df.columns:
+                    bg_value = df.loc[prog, bg_spec]
+                    if isinstance(bg_value, pd.Series):
+                        bg_value = bg_value.iloc[0]
+                    bg_score = float(bg_value)
+                    weighted_bg_score += bg_score * weight
+                    total_weight += weight
+            
+            if total_weight > 0:
+                avg_bg_score = weighted_bg_score / total_weight
+                
+                # Only consider as bridge if both directions have reasonable scores
+                if to_target >= bridge_threshold and avg_bg_score >= bridge_threshold:
+                    # Use harmonic mean to favor programs good at both bridging and leading to target
+                    bridge_score = 2 * (to_target * avg_bg_score) / (to_target + avg_bg_score)
+                    bridge_scores[prog] = bridge_score
     
     # Return top 5 bridge programs if found
     if bridge_scores:
@@ -379,16 +382,14 @@ def recommend_course_with_work(education, work_experiences, target,
             "match_type": "bridge",
             "category": "Bridge Programs",
             "score": round(top_bridges[0][1], 2),
-            "message": f"No direct high match found. These bridge programs can help transition from your background to {target}:",
+            "message": f"No direct or high match found. These bridge programs can help transition from your background to {target}:",
             "recommendation": top_bridges[0][0],
             "alternatives": bridge_programs,
             "bridge_programs": bridge_programs,
             "source": "bridge"
         }
     
-    # 4. FALLBACK - Show best available path
-    # Priority: Work experience with most years OR highest score > Education
-    
+    # 4. FALLBACK - Show best available path (≤40)
     best_path = None
     best_score = edu_score
     best_source = "education"

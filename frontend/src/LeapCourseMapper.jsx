@@ -2,7 +2,7 @@ import React, { useState, useEffect, Fragment } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
 import { GraduationCap, Target, Award, ArrowRight, BookOpen, Brain, Zap } from 'lucide-react';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = 'https://course-recom-backend.onrender.com';
 
 const LeapCourseMapper = () => {
   const [fromSpec, setFromSpec] = useState('');

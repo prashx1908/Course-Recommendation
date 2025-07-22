@@ -1,767 +1,923 @@
-import React, { useState, useEffect, Fragment } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from 'recharts';
-import { GraduationCap, Target, Award, ArrowRight, BookOpen, Brain, Zap } from 'lucide-react';
 
-const API_BASE = 'https://course-recom-backend.onrender.com';
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell // Added PieChart components
+} from 'recharts';
+import { GraduationCap, Target, Award, ArrowRight, BookOpen, Brain, Zap, Plus, X, CheckCircle, ThumbsUp, Loader2 } from 'lucide-react';
+
+const API_BASE = 'https://course-recom-backend.onrender.com'; // Ensure this matches your FastAPI server address
 
 const LeapCourseMapper = () => {
+  // State variables for user inputs
   const [fromSpec, setFromSpec] = useState('');
   const [toSpec, setToSpec] = useState('');
-  const [workRoleInput, setWorkRoleInput] = useState('');
-  const [workRoleYearsInput, setWorkRoleYearsInput] = useState('');
-  const [workRoles, setWorkRoles] = useState([]); // now array of {role, years}
-  const [workRoleSuggestions, setWorkRoleSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [workRoles, setWorkRoles] = useState([]); // Array of { role: string, years: number }
+
+  // State variables for dropdown options fetched from API
   const [specializations, setSpecializations] = useState([]);
   const [allTargets, setAllTargets] = useState([]);
-  const [result, setResult] = useState(null);
-  const [progress, setProgress] = useState(0);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [relevancyBreakdown, setRelevancyBreakdown] = useState(null);
+  const [allWorkRoles, setAllWorkRoles] = useState([]);
 
+  // State variables for displaying results
+  const [recommendationResult, setRecommendationResult] = useState(null);
+  const [breakdownResult, setBreakdownResult] = useState(null);
+
+  // UI state
+  const [isLoading, setIsLoading] = useState(true); // For initial data load
+  const [isAnalyzing, setIsAnalyzing] = useState(false); // For analysis button state
+  const [error, setError] = useState(null);
+
+  // --- Data Fetching on Component Mount ---
   useEffect(() => {
-    fetch(`${API_BASE}/specializations`)
-      .then(res => res.json())
-      .then(data => setSpecializations(data));
-    fetch(`${API_BASE}/targets`)
-      .then(res => res.json())
-      .then(data => setAllTargets(data));
-    fetch(`${API_BASE}/work_roles`)
-      .then(res => res.json())
-      .then(data => setWorkRoleSuggestions(data));
+    const fetchData = async () => {
+      try {
+        const [specsRes, targetsRes, workRolesRes] = await Promise.all([
+          fetch(`${API_BASE}/specializations`),
+          fetch(`${API_BASE}/targets`),
+          fetch(`${API_BASE}/work_roles`)
+        ]);
+
+        if (!specsRes.ok || !targetsRes.ok || !workRolesRes.ok) {
+          throw new Error('One or more API endpoints failed to load initial data.');
+        }
+
+        setSpecializations(await specsRes.json());
+        setAllTargets(await targetsRes.json());
+        setAllWorkRoles(await workRolesRes.json());
+      } catch (err) {
+        console.error("Error fetching initial data:", err);
+        setError('Failed to load initial data. Please ensure the backend is running and accessible.');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []); // Empty dependency array means this runs once on mount
+
+  // --- Work Roles Management ---
+  const addWorkRole = useCallback(() => {
+    setWorkRoles(prevRoles => [...prevRoles, { role: '', years: 0 }]);
   }, []);
 
-  const styles = {
-    bg: {
-      minHeight: '100vh',
-      background: 'linear-gradient(135deg, #e0c3fc 0%, #f5f7fa 100%)',
-      fontFamily: '"Manrope", "Poppins", "Segoe UI", Arial, sans-serif',
-      color: '#181A2A',
-      paddingBottom: 40,
-    },
-    header: {
-      textAlign: 'center',
-      padding: '3.5rem 1rem 2.5rem 1rem',
-    },
-    logo: {
-      height: 70,
-      marginBottom: 28,
-      filter: 'drop-shadow(0 4px 24px #a084e8aa)'
-    },
-    badge: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 10,
-      background: 'rgba(255,255,255,0.7)',
-      borderRadius: 999,
-      padding: '0.6em 1.7em',
-      fontWeight: 700,
-      fontSize: 18,
-      color: '#7c7caa',
-      boxShadow: '0 2px 12px rgba(108,71,255,0.10)',
-      marginBottom: 28,
-      backdropFilter: 'blur(8px)',
-      letterSpacing: '0.02em',
-    },
-    heading: {
-      fontSize: 48,
-      fontWeight: 900,
-      color: '#6c47ff',
-      marginBottom: 8,
-      letterSpacing: '-1.5px',
-      lineHeight: 1.1,
-      textShadow: '0 2px 16px #a084e855',
-    },
-    headingAccent: {
-      color: '#a084e8',
-      display: 'block',
-      fontSize: 48,
-      fontWeight: 900,
-      marginTop: 0,
-      letterSpacing: '-1.5px',
-    },
-    subheading: {
-      fontSize: 22,
-      color: '#7c7caa',
-      marginBottom: 38,
-      fontWeight: 600,
-      letterSpacing: '0.01em',
-    },
-    card: {
-      background: 'rgba(255,255,255,0.85)',
-      borderRadius: 36,
-      boxShadow: '0 12px 48px 0 #a084e822, 0 2px 8px #e0c3fc33',
-      padding: '2.8rem 2.2rem',
-      margin: '2.5rem auto',
-      maxWidth: 720,
-      backdropFilter: 'blur(12px)',
-      border: '1.5px solid #e0c3fc55',
-    },
-    label: {
-      fontSize: 20,
-      color: '#6c47ff',
-      fontWeight: 700,
-      marginBottom: 6,
-      display: 'block',
-      letterSpacing: '0.01em',
-    },
-    helper: {
-      fontSize: 16,
-      color: '#7c7caa',
-      marginBottom: 18,
-      display: 'block',
-      fontWeight: 500,
-    },
-    select: {
-      width: '100%',
-      padding: '1.1rem',
-      borderRadius: 20,
-      border: '1.5px solid #e0c3fc',
-      background: 'rgba(248,248,255,0.95)',
-      fontSize: 18,
-      marginBottom: 28,
-      transition: 'border 0.2s',
-      outline: 'none',
-      fontWeight: 600,
-      color: '#6c47ff',
-      boxShadow: '0 1px 8px #e0c3fc22',
-    },
-    button: {
-      display: 'inline-flex',
-      alignItems: 'center',
-      gap: 14,
-      padding: '1.2em 2.8em',
-      fontSize: 20,
-      fontWeight: 800,
-      color: '#fff',
-      background: 'linear-gradient(90deg, #6c47ff 0%, #a084e8 100%)',
-      border: 'none',
-      borderRadius: 36,
-      boxShadow: '0 4px 24px #a084e822',
-      cursor: 'pointer',
-      transition: 'background 0.2s, transform 0.1s',
-      marginTop: 18,
-      letterSpacing: '0.01em',
-    },
-    buttonDisabled: {
-      opacity: 0.6,
-      cursor: 'not-allowed',
-    },
-    progressBarBg: {
-      background: 'rgba(224,224,239,0.7)',
-      borderRadius: 24,
-      height: 20,
-      width: '100%',
-      margin: '1.7em 0',
-      boxShadow: '0 1px 8px #e0c3fc22',
-    },
-    progressBarFill: percent => ({
-      background: 'linear-gradient(90deg, #6c47ff 0%, #a084e8 100%)',
-      borderRadius: 24,
-      height: '100%',
-      width: percent + '%',
-      transition: 'width 0.5s',
-    }),
-    circularProgress: {
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      margin: '2.5em 0',
-      position: 'relative',
-    },
-    pill: {
-      display: 'inline-block',
-      background: 'rgba(245,247,250,0.95)',
-      color: '#6c47ff',
-      borderRadius: 28,
-      padding: '0.7em 1.5em',
-      fontWeight: 700,
-      margin: '0.3em 0.7em 0.3em 0',
-      boxShadow: '0 1px 8px #e0c3fc22',
-      fontSize: 18,
-      border: '1.5px solid #e0c3fc',
-    },
-    resultCard: {
-      background: 'rgba(255,255,255,0.92)',
-      borderRadius: 36,
-      boxShadow: '0 12px 48px 0 #a084e822, 0 2px 8px #e0c3fc33',
-      padding: '2.8rem 2.2rem',
-      margin: '2.5rem auto',
-      maxWidth: 720,
-      backdropFilter: 'blur(12px)',
-      border: '1.5px solid #e0c3fc55',
-    },
-    altOptions: {
-      display: 'flex',
-      flexWrap: 'wrap',
-      justifyContent: 'center',
-      gap: 16,
-      marginTop: 18,
-    },
-    altPill: {
-      background: 'rgba(248,248,255,0.95)',
-      color: '#6c47ff',
-      borderRadius: 28,
-      padding: '0.7em 1.5em',
-      fontWeight: 700,
-      fontSize: 18,
-      boxShadow: '0 1px 8px #e0c3fc22',
-      margin: '0.3em',
-      border: '1.5px solid #e0c3fc',
-    },
-    analyticsCard: {
-      background: 'rgba(255,255,255,0.92)',
-      borderRadius: 36,
-      boxShadow: '0 12px 48px 0 #a084e822, 0 2px 8px #e0c3fc33',
-      padding: '2.8rem 2.2rem',
-      margin: '2.5rem auto',
-      maxWidth: 1000,
-      backdropFilter: 'blur(12px)',
-      border: '1.5px solid #e0c3fc55',
-    },
-    metricsRow: {
-      display: 'flex',
-      justifyContent: 'center',
-      gap: 40,
-      marginTop: 40,
-      marginBottom: 20,
-      flexWrap: 'wrap',
-    },
-    metricCard: {
-      background: 'linear-gradient(90deg, #f5f7fa 0%, #e0c3fc 100%)',
-      borderRadius: 28,
-      padding: '2.2rem 2.7rem',
-      minWidth: 200,
-      textAlign: 'center',
-      boxShadow: '0 2px 12px #e0c3fc22',
-      margin: '0.7em 0',
-    },
-    metricValue: {
-      fontSize: 38,
-      fontWeight: 900,
-      color: '#6c47ff',
-      marginBottom: 10,
-      letterSpacing: '-1px',
-    },
-    metricLabel: {
-      fontSize: 18,
-      color: '#7c7caa',
-      fontWeight: 700,
-      letterSpacing: '0.01em',
-    },
-    chartTitle: {
-      fontWeight: 800,
-      color: '#6c47ff',
-      fontSize: 22,
-      marginBottom: 18,
-      textAlign: 'center',
-      letterSpacing: '-0.5px',
-    },
-    chartDesc: {
-      color: '#7c7caa',
-      fontSize: 16,
-      textAlign: 'center',
-      marginTop: 10,
-      fontWeight: 500,
-    },
+  const removeWorkRole = useCallback((indexToRemove) => {
+    setWorkRoles(prevRoles => prevRoles.filter((_, i) => i !== indexToRemove));
+  }, []);
+
+  const updateWorkRole = useCallback((indexToUpdate, field, value) => {
+    setWorkRoles(prevRoles =>
+      prevRoles.map((role, i) =>
+        i === indexToUpdate ? { ...role, [field]: value } : role
+      )
+    );
+  }, []);
+
+  // --- Pathway Analysis ---
+  const analyzePathway = async () => {
+    // Clear previous results and errors
+    setRecommendationResult(null);
+    setBreakdownResult(null);
+    setError(null);
+
+    // Input validation
+    if (!fromSpec) {
+      setError('Please select your educational background.');
+      return;
+    }
+    if (!toSpec) {
+      setError('Please select your target specialization.');
+      return;
+    }
+
+    setIsAnalyzing(true);
+
+    try {
+      // Format work roles for the API query parameter
+      const workRolesParam = workRoles
+        .filter(w => w.role) // Only include roles that have been selected
+        .map(w => `${encodeURIComponent(w.role)}:${w.years}`) // Encode role names
+        .join(',');
+
+      // Construct API URLs
+      const recommendUrl = `${API_BASE}/recommend_multi?education_spec=${encodeURIComponent(fromSpec)}&target_spec=${encodeURIComponent(toSpec)}${workRolesParam ? `&work_roles=${workRolesParam}` : ''}`;
+      const breakdownUrl = `${API_BASE}/match_breakdown?education_spec=${encodeURIComponent(fromSpec)}&target_spec=${encodeURIComponent(toSpec)}${workRolesParam ? `&work_roles=${workRolesParam}` : ''}`;
+
+      // Fetch data concurrently
+      const [recommendRes, breakdownRes] = await Promise.all([
+        fetch(recommendUrl),
+        fetch(breakdownUrl)
+      ]);
+
+      // Handle HTTP errors
+      if (!recommendRes.ok) {
+        const errData = await recommendRes.json();
+        throw new Error(errData.detail?.message || `Recommendation API Error: ${recommendRes.statusText}`);
+      }
+      if (!breakdownRes.ok) {
+        const errData = await breakdownRes.json();
+        throw new Error(errData.detail?.message || `Breakdown API Error: ${breakdownRes.statusText}`);
+      }
+
+      // Parse JSON responses
+      const recommendData = await recommendRes.json();
+      const breakdownData = await breakdownRes.json();
+
+      setRecommendationResult(recommendData);
+      setBreakdownResult(breakdownData);
+
+    } catch (err) {
+      console.error("Analysis failed:", err);
+      setError(err.message || 'An unexpected error occurred during analysis. Please try again.');
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
-  const CircularProgress = ({ value, size = 120, strokeWidth = 10 }) => {
-    const radius = (size - strokeWidth) / 2;
-    const circumference = radius * 2 * Math.PI;
-    const offset = circumference - (value / 100) * circumference;
+  // --- Helper Functions for UI Rendering ---
+  const getMatchTypeColor = (matchType) => {
+    switch (matchType) {
+      case 'direct': return '#10B981'; // Green
+      case 'achievable': return '#3B82F6'; // Blue
+      case 'bridge': return '#F59E0B'; // Amber
+      case 'fallback': return '#EF4444'; // Red
+      default: return '#6B7280'; // Gray
+    }
+  };
+
+  const getMatchTypeIcon = (matchType) => {
+    switch (matchType) {
+      case 'direct': return <Target className="w-6 h-6" />;
+      case 'achievable': return <Award className="w-6 h-6" />;
+      case 'bridge': return <ArrowRight className="w-6 h-6" />;
+      case 'fallback': return <BookOpen className="w-6 h-6" />;
+      default: return <Brain className="w-6 h-6" />;
+    }
+  };
+
+  // --- Relevancy Level for Donut Chart ---
+  const getRelevancyLevelData = (score) => {
+    let level = 'Low';
+    let color = '#EF4444'; // Red for Low
+
+    if (score > 75) {
+      level = 'High';
+      color = '#10B981'; // Green for High
+    } else if (score >= 50) { // 50-75
+      level = 'Medium';
+      color = '#F59E0B'; // Amber for Medium
+    }
+
+    // Pie chart data structure
+    return {
+      data: [{ name: level, value: score }, { name: 'Remaining', value: 100 - score }],
+      color: color,
+      level: level,
+      score: score
+    };
+  };
+
+  // Custom Label for Pie Chart
+  const CustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index, value, payload }) => {
+    if (payload[0].name === 'Remaining') return null; // Don't label the remaining slice
+
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos(-midAngle * Math.PI / 180);
+    const y = cy + radius * Math.sin(-midAngle * Math.PI / 180);
+
     return (
-      <div style={styles.circularProgress}>
-        <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#e0e0ef"
-            strokeWidth={strokeWidth}
-            fill="transparent"
-          />
-          <circle
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            stroke="#6c47ff"
-            strokeWidth={strokeWidth}
-            fill="transparent"
-            strokeDasharray={circumference}
-            strokeDashoffset={offset}
-            strokeLinecap="round"
-            style={{ transition: 'stroke-dashoffset 1s ease-in-out' }}
-          />
-        </svg>
-        <div style={{ position: 'absolute', fontSize: 32, fontWeight: 700, color: '#6c47ff' }}>{value}%</div>
+      <text x={x} y={y} fill="white" textAnchor={x > cx ? 'start' : 'end'} dominantBaseline="central" style={{ fontWeight: 'bold', fontSize: '1.2rem' }}>
+        {`${payload[0].value}%`}
+      </text>
+    );
+  };
+
+
+  // --- Render Components ---
+
+  // Component for 100% Direct Match Special UI
+  const renderDirectMatchConfirmation = () => {
+    if (!recommendationResult || recommendationResult.match_type !== 'direct' || recommendationResult.score < 100) {
+      return null; // Only render if it's a perfect direct match
+    }
+
+    return (
+      <div style={styles.directMatchCard}>
+        <div style={styles.directMatchHeader}>
+          <CheckCircle style={styles.directMatchIcon} />
+          <div>
+            <h2 style={styles.directMatchTitle}>Perfect Match! 🎯</h2>
+            <p style={styles.directMatchMessage}>
+              Your background in <strong>{recommendationResult.source}</strong> is a perfect match for <strong>{recommendationResult.recommendation}</strong>!
+            </p>
+          </div>
+        </div>
+
+        <div style={styles.directMatchScore}>
+          <div style={styles.scoreCircle}>
+            <span style={styles.scoreValue}>100</span>
+            <span style={styles.scoreLabel}>% Match</span>
+          </div>
+        </div>
+
+        <div style={styles.directMatchAction}>
+          <div style={styles.actionContent}>
+            <ThumbsUp style={styles.actionIcon} />
+            <div>
+              <h3 style={styles.actionTitle}>You're all set!</h3>
+              <p style={styles.actionDescription}>
+                You can proceed directly to {recommendationResult.recommendation} without any additional preparation or bridge programs.
+              </p>
+            </div>
+          </div>
+          <button
+            style={styles.proceedButton}
+            onMouseEnter={(e) => {
+              e.target.style.background = 'rgba(255, 255, 255, 0.3)';
+              e.target.style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.background = 'rgba(255, 255, 255, 0.2)';
+              e.target.style.transform = 'translateY(0)';
+            }}
+          >
+            <Target className="w-6 h-6" />
+            Proceed to {recommendationResult.recommendation}
+          </button>
+        </div>
       </div>
     );
   };
 
-  const handleAddWorkRole = (role, years) => {
-    const r = (role || workRoleInput).trim();
-    const y = parseInt(years || workRoleYearsInput, 10);
-    if (r && !workRoles.some(w => w.role === r)) {
-      setWorkRoles([...workRoles, { role: r, years: isNaN(y) ? 0 : y }]);
-      setWorkRoleInput('');
-      setWorkRoleYearsInput('');
-      setShowSuggestions(false);
+  // Component for displaying general recommendation results (not perfect match)
+  const renderGeneralRecommendation = () => {
+    if (!recommendationResult || (recommendationResult.match_type === 'direct' && recommendationResult.score >= 100)) {
+      return null; // Don't render if there's no result or if it's a perfect direct match (handled by specific component)
     }
-  };
 
-  const handleRemoveWorkRole = (role) => {
-    setWorkRoles(workRoles.filter(w => w.role !== role));
-  };
+    const { data: donutData, color: donutColor, level: relevancyLevel, score: currentScore } = getRelevancyLevelData(recommendationResult.score);
 
-  const filteredSuggestions = workRoleInput
-    ? workRoleSuggestions.filter(
-        s => s.toLowerCase().includes(workRoleInput.toLowerCase()) && !workRoles.some(w => w.role === s)
-      ).slice(0, 8)
-    : [];
-
-  const getRecommendation = () => {
-    if (!fromSpec || !toSpec) return;
-    setIsAnalyzing(true);
-    setProgress(0);
-    const progressInterval = setInterval(() => {
-      setProgress(prev => {
-        if (prev >= 100) {
-          clearInterval(progressInterval);
-          return 100;
-        }
-        return prev + 10;
-      });
-    }, 150);
-    setTimeout(async () => {
-      setIsAnalyzing(false);
-      const workRolesParam = workRoles.map(w => `${w.role}:${w.years}`).join(',');
-      const params = new URLSearchParams({
-        education_spec: fromSpec,
-        work_roles: workRolesParam,
-        target_spec: toSpec
-      });
-      const res = await fetch(`${API_BASE}/recommend_multi?${params.toString()}`);
-      const data = await res.json();
-      setResult({
-        category: data.category,
-        source: data.source,
-        score: data.score,
-        message: data.message,
-        error: data.error,
-        alternatives: data.alternatives
-      });
-    }, 2000);
-  };
-
-  const getRelevancyBreakdown = async () => {
-    if (!fromSpec || !toSpec) return;
-    const workRolesParam = workRoles.map(w => `${w.role}:${w.years}`).join(',');
-    const params = new URLSearchParams({
-      education_spec: fromSpec,
-      work_roles: workRolesParam,
-      target_spec: toSpec
-    });
-    const res = await fetch(`${API_BASE}/relevancy_breakdown?${params.toString()}`);
-    const data = await res.json();
-    setRelevancyBreakdown(data);
-  };
-
-  const handleGetRecommendation = async () => {
-    await getRelevancyBreakdown();
-    getRecommendation();
-  };
-
-  const getDistanceData = () => {
-    if (!fromSpec || !toSpec || !result) return [];
-    return [
-      { name: 'Your Background', value: fromSpec, distance: 0, color: '#3b82f6' },
-      { name: 'Target Program', value: toSpec, distance: 100 - (result.score || 0), color: '#ef4444' },
-      { name: 'Recommended', value: result.recommendation, distance: result.recommendation === toSpec ? 100 - (result.score || 0) : 20, color: '#10b981' }
-    ];
-  };
-
-  const getRadarData = () => {
-    if (!fromSpec || !result) return [];
-    const skills = ['Technical Skills', 'Domain Knowledge', 'Research Methods', 'Industry Relevance', 'Career Prospects'];
-    return skills.map(skill => ({
-      skill,
-      current: Math.random() * 100,
-      target: Math.random() * 100,
-      recommended: Math.random() * 100
-    }));
-  };
-
-  return (
-    <Fragment>
-      <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;900&family=Poppins:wght@400;600;700;900&display=swap" rel="stylesheet" />
-      <div style={styles.bg}>
-      {/* Header */}
-        <div style={styles.header}>
-          <img 
-            src="https://ik.imagekit.io/onsnhxjshmp/LeapScholar/new-header-logo_7i5sVUf9VF.svg" 
-            alt="Leap Scholar" 
-            style={styles.logo}
-          />
-          <div style={styles.badge}>
-            <Zap style={{ width: 20, height: 20, color: '#FFD700' }} />
-            <span>AI-Powered Course Matching</span>
+    return (
+      <div style={styles.resultCard}>
+        <div style={styles.matchHeader}>
+          <div style={{ color: getMatchTypeColor(recommendationResult.match_type) }}>
+            {getMatchTypeIcon(recommendationResult.match_type)}
           </div>
-          <div style={styles.heading}>Your Study Abroad Plan
-            <span style={styles.headingAccent}>in Minutes</span>
-        </div>
-          <div style={styles.subheading}>
-          Get personalized course recommendations with AI-powered analysis and visual insights
-                </div>
-              </div>
-        {/* Input Card */}
-        <div style={styles.card}>
-          <div style={{ marginBottom: 32 }}>
-            <span style={styles.label}>Your Background</span>
-            <span style={styles.helper}>Select your previous field of study</span>
-              <select 
-                value={fromSpec}
-              onChange={e => setFromSpec(e.target.value)}
-              style={styles.select}
-              >
-                <option value="">Choose your background...</option>
-                {specializations.map(spec => (
-                  <option key={spec} value={spec}>{spec}</option>
-                ))}
-              </select>
-            </div>
-          <div style={{ marginBottom: 32, position: 'relative' }}>
-            <span style={styles.label}>Work Experience Roles</span>
-            <span style={styles.helper}>Add your work roles (e.g. Software Engineering, Marketing, etc.)</span>
-            <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-              <input
-                type="text"
-                value={workRoleInput}
-                onChange={e => {
-                  setWorkRoleInput(e.target.value);
-                  setShowSuggestions(true);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') { e.preventDefault(); handleAddWorkRole(); }
-                }}
-                style={{ ...styles.select, flex: 2, marginBottom: 0 }}
-                placeholder="Type a work role and press Enter or +"
-                autoComplete="off"
-              />
-              <input
-                type="number"
-                min="0"
-                value={workRoleYearsInput}
-                onChange={e => setWorkRoleYearsInput(e.target.value)}
-                style={{ ...styles.select, flex: 1, marginBottom: 0, maxWidth: 100 }}
-                placeholder="Years"
-              />
-              <button
-                type="button"
-                onClick={() => handleAddWorkRole()}
-                style={{ ...styles.button, padding: '0.8em 1.5em', fontSize: 18, marginTop: 0 }}
-                disabled={!workRoleInput.trim()}
-              >+
-              </button>
-                </div>
-            {showSuggestions && filteredSuggestions.length > 0 && (
-              <div style={{
-                position: 'absolute',
-                top: 80,
-                left: 0,
-                right: 0,
-                background: '#fff',
-                borderRadius: 16,
-                boxShadow: '0 4px 24px #a084e822',
-                zIndex: 10,
-                maxHeight: 220,
-                overflowY: 'auto',
-                border: '1.5px solid #e0c3fc',
-              }}>
-                {filteredSuggestions.map(s => (
-                  <div
-                    key={s}
-                    onMouseDown={() => handleAddWorkRole(s, '')}
-                    style={{
-                      padding: '1em 1.5em',
-                      cursor: 'pointer',
-                      color: '#6c47ff',
-                      fontWeight: 600,
-                      fontSize: 18,
-                      borderBottom: '1px solid #f5f7fa',
-                    }}
-                  >
-                    {s}
-                </div>
-                ))}
-              </div>
-            )}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-              {workRoles.map(w => (
-                <span key={w.role} style={{ ...styles.pill, background: '#e0c3fc', color: '#6c47ff', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {w.role} ({w.years} yrs)
-                  <span
-                    onClick={() => handleRemoveWorkRole(w.role)}
-                    style={{ cursor: 'pointer', marginLeft: 4, fontWeight: 900 }}
-                  >×</span>
-                </span>
-              ))}
-            </div>
+          <div style={{ flex: 1 }}>
+            <h3 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '700' }}>
+              {recommendationResult.category}
+            </h3>
+            <p style={{ margin: '0.25rem 0 0 0', color: '#6B7280' }}>
+              {recommendationResult.message}
+            </p>
           </div>
-          <div style={{ marginBottom: 32 }}>
-            <span style={styles.label}>Target Program</span>
-            <span style={styles.helper}>Choose your desired program</span>
-              <select 
-                value={toSpec}
-              onChange={e => setToSpec(e.target.value)}
-              style={styles.select}
-              >
-                <option value="">Choose your target...</option>
-                {allTargets.map(spec => (
-                  <option key={spec} value={spec}>{spec}</option>
-                ))}
-              </select>
-            </div>
-          <div style={{ textAlign: 'center' }}>
-            <button
-              onClick={handleGetRecommendation}
-              disabled={!fromSpec || !toSpec || isAnalyzing}
-              style={{ ...styles.button, ...((!fromSpec || !toSpec || isAnalyzing) ? styles.buttonDisabled : {}) }}
-            >
-              <Brain style={{ width: 22, height: 22 }} />
-              {isAnalyzing ? 'Analyzing...' : 'Get AI Recommendation'}
-              <ArrowRight style={{ width: 22, height: 22 }} />
-            </button>
+          <div style={{ ...styles.matchScore, color: getMatchTypeColor(recommendationResult.match_type) }}>
+            {recommendationResult.score}%
           </div>
         </div>
-        {/* Progress Bar */}
-        {isAnalyzing && (
-          <div style={{ ...styles.card, maxWidth: 700, margin: '2rem auto' }}>
-            <div style={{ textAlign: 'center', fontWeight: 700, fontSize: 20, marginBottom: 16 }}>AI Analysis in Progress</div>
-            <div style={styles.progressBarBg}>
-              <div style={styles.progressBarFill(progress)}></div>
-            </div>
-            <div style={{ textAlign: 'center', color: '#7c7caa', fontSize: 16 }}>Analyzing compatibility and finding optimal pathways...</div>
+
+        {/* Donut Chart for Relevancy Level */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1.5rem', flexDirection: 'column' }}>
+            <h4 style={{ margin: '0 0 0.5rem 0', fontWeight: '600', color: '#374151' }}>Overall Relevancy Level: {relevancyLevel}</h4>
+            <ResponsiveContainer width="100%" height={200}>
+                <PieChart>
+                    <Pie
+                        data={donutData}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={60}
+                        outerRadius={80}
+                        fill="#8884d8"
+                        paddingAngle={5}
+                        dataKey="value"
+                        isAnimationActive={false} // Disable animation for static display
+                    >
+                        {
+                            donutData.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={index === 0 ? donutColor : '#E5E7EB'} />
+                            ))
+                        }
+                    </Pie>
+                    <Tooltip />
+                    {/* Custom label to show score in the center of the donut */}
+                    <text x="50%" y="50%" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '2em', fontWeight: 'bold', fill: donutColor }}>
+                        {`${currentScore}%`}
+                    </text>
+                    <text x="50%" y="65%" textAnchor="middle" dominantBaseline="middle" style={{ fontSize: '1em', fill: '#6B7280' }}>
+                       {relevancyLevel}
+                    </text>
+                </PieChart>
+            </ResponsiveContainer>
+        </div>
+
+
+        {recommendationResult.recommendation && (
+          <div style={styles.recommendationBox}>
+            <h4 style={{ margin: '0 0 0.5rem 0', fontWeight: '600' }}>
+              Recommended Program: {recommendationResult.recommendation}
+            </h4>
           </div>
         )}
-        {/* Recommended Program Card - always shown at the top of results */}
-        {result && !isAnalyzing && (
-          <div style={{
-            background: 'linear-gradient(90deg, #e0c3fc 0%, #f5f7fa 100%)',
-            borderRadius: 22,
-            padding: '2.2rem 2.7rem',
-            margin: '0 auto 32px auto',
-            maxWidth: 480,
-            textAlign: 'center',
-            color: '#6c47ff',
-            fontWeight: 900,
-            fontSize: 30,
-            boxShadow: '0 4px 24px #e0c3fc44',
-            border: '3px solid #a084e8',
-            position: 'relative',
-            zIndex: 2,
-          }}>
-            <div style={{ fontSize: 26, fontWeight: 800, color: '#a084e8', marginBottom: 12, letterSpacing: 1 }}>Recommended Program</div>
-            <div style={{ fontSize: 38, fontWeight: 900, color: '#6c47ff', marginBottom: 10, letterSpacing: 1 }}>{result.recommendation || result.alternatives?.[0]?.name || 'N/A'}</div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: '#22c55e', marginBottom: 8 }}>{result.category}</div>
-            {result.alternatives && result.alternatives.length > 0 && (
-              <span style={{
-                display: 'inline-block',
-                fontSize: 18,
-                fontWeight: 800,
-                color: result.alternatives[0].tag === 'core' ? '#22c55e' : '#a084e8',
-                background: result.alternatives[0].tag === 'core' ? '#e0fbe0' : '#ede9fe',
-                borderRadius: 14,
-                padding: '0.4em 1.1em',
-                marginLeft: 10,
-                marginTop: 8,
-                letterSpacing: 1,
-              }}>{result.alternatives[0].tag === 'core' ? 'Core' : 'Non-core'}</span>
-            )}
-          </div>
-        )}
-        {/* Results Section (breakdown, analytics, etc.) */}
-        {result && !isAnalyzing && (
-          <div style={styles.resultCard}>
-            {result.error ? (
-              <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 20 }}>{result.error}</div>
-            ) : (
-              <>
-                {/* Relevancy Breakdown Bars (replace old circular bar and top recommendation) */}
-                {relevancyBreakdown && relevancyBreakdown.relevancies && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, justifyContent: 'center', marginTop: 8, marginBottom: 8 }}>
-                    {relevancyBreakdown.relevancies.map((item, idx) => (
-                      <div key={item.label + item.source} style={{ flex: '1 1 180px', minWidth: 180, maxWidth: 260, background: '#f5f7fa', borderRadius: 18, boxShadow: '0 2px 12px #e0c3fc22', padding: '1.2rem 1.2rem', textAlign: 'center', margin: '0.7em 0' }}>
-                        <div style={{ fontWeight: 700, color: '#6c47ff', fontSize: 18, marginBottom: 4 }}>{item.label}</div>
-                        <div style={{ fontWeight: 600, color: '#7c7caa', fontSize: 16, marginBottom: 8 }}>{item.source}</div>
-                        {typeof item.score === 'number' ? (
-                          <div style={{ fontWeight: 800, color: '#6c47ff', fontSize: 28, marginBottom: 2 }}>{Math.round(item.score)}%</div>
-                        ) : (
-                          <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 18 }}>N/A</div>
-                        )}
-                  </div>
-                    ))}
-                </div>
-                  )}
-                {/* Fallback and Bridge Alternatives */}
-                {(result.match_type === 'fallback' || result.match_type === 'bridge') && (
-                  <>
-                    <div style={{ background: 'linear-gradient(90deg, #f5f7fa 0%, #e0c3fc 100%)', borderRadius: 20, padding: 20, margin: '0 auto 32px auto', maxWidth: 500, textAlign: 'center', color: '#6c47ff', fontWeight: 600, fontSize: 18 }}>
-                      {result.message}
-                    </div>
-                    {result.alternatives && result.alternatives.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 24, justifyContent: 'center', marginTop: 8 }}>
-                        {result.alternatives.map((alt, idx) => (
-                          <div key={alt.name} style={{
-                            background: '#f5f7fa',
-                            borderRadius: 24,
-                            boxShadow: '0 2px 12px #e0c3fc22',
-                            padding: '2.2rem 2.7rem',
-                            minWidth: 180,
-                            textAlign: 'center',
-                            fontWeight: 800,
-                            fontSize: 22,
-                            color: idx === 0 ? '#6c47ff' : '#7c7caa',
-                            border: idx === 0 ? '2.5px solid #6c47ff' : '1.5px solid #e0c3fc',
-                            transition: 'border 0.2s',
-                            margin: '0.7em 0',
-                            position: 'relative',
-                          }}>
-                            {alt.name}
-                            <span style={{
-                              display: 'inline-block',
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: alt.tag === 'core' ? '#22c55e' : '#a084e8',
-                              background: alt.tag === 'core' ? '#e0fbe0' : '#ede9fe',
-                              borderRadius: 12,
-                              padding: '0.3em 0.9em',
-                              marginLeft: 10,
-                              marginTop: 10,
-                            }}>{alt.tag === 'core' ? 'Core' : 'Non-core'}</span>
-                            {idx === 0 && (
-                              <div style={{ fontSize: 14, color: '#22c55e', fontWeight: 700, marginTop: 8 }}>Top Recommendation</div>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-                {result.alternatives && result.alternatives.length > 1 && (
-                  <div style={{ marginTop: 8 }}>
-                    <div style={{ fontWeight: 700, color: '#6c47ff', fontSize: 18, marginBottom: 12, textAlign: 'center' }}>
-                      Other Recommended Programs
-                    </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, justifyContent: 'center' }}>
-                      {result.alternatives.slice(1).map((alt, idx) => (
-                        <span key={alt.name} style={{ ...styles.pill, background: '#f5f7fa', color: '#6c47ff', fontWeight: 700, fontSize: 18, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          {alt.name}
-                          <span style={{
-                            display: 'inline-block',
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: alt.tag === 'core' ? '#22c55e' : '#a084e8',
-                            background: alt.tag === 'core' ? '#e0fbe0' : '#ede9fe',
-                            borderRadius: 12,
-                            padding: '0.3em 0.9em',
-                            marginLeft: 8,
-                          }}>{alt.tag === 'core' ? 'Core' : 'Non-core'}</span>
-                        </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-              </>
-              )}
-            </div>
-        )}
-        {/* Relevancy Breakdown Section */}
-        {relevancyBreakdown && !isAnalyzing && (
-          <div style={{ ...styles.resultCard, marginTop: 32 }}>
-            <div style={{ fontSize: 28, fontWeight: 700, color: '#6c47ff', marginBottom: 18, textAlign: 'center' }}>
-              Relevancy Breakdown to <span style={{ color: '#a084e8' }}>{relevancyBreakdown.target}</span>
-              <span style={{
-                display: 'inline-block',
-                fontSize: 15,
-                fontWeight: 700,
-                color: relevancyBreakdown.target_tag === 'core' ? '#22c55e' : '#a084e8',
-                background: relevancyBreakdown.target_tag === 'core' ? '#e0fbe0' : '#ede9fe',
-                borderRadius: 12,
-                padding: '0.3em 0.9em',
-                marginLeft: 10,
-              }}>{relevancyBreakdown.target_tag === 'core' ? 'Core' : 'Non-core'}</span>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, justifyContent: 'center' }}>
-              {relevancyBreakdown.relevancies.map((item, idx) => (
-                <div key={item.label + item.source} style={{ flex: '1 1 220px', minWidth: 220, maxWidth: 300, background: '#f5f7fa', borderRadius: 24, boxShadow: '0 2px 12px #e0c3fc22', padding: '2.2rem 1.7rem', textAlign: 'center', margin: '0.7em 0' }}>
-                  <div style={{ fontWeight: 700, color: '#6c47ff', fontSize: 20, marginBottom: 8 }}>{item.label}</div>
-                  <div style={{ fontWeight: 600, color: '#7c7caa', fontSize: 18, marginBottom: 12 }}>{item.source}</div>
-                  {typeof item.score === 'number' ? (
-                    <CircularProgress value={Math.round(item.score)} size={90} strokeWidth={9} />
-                  ) : (
-                    <div style={{ color: '#ef4444', fontWeight: 700, fontSize: 18 }}>N/A</div>
-                  )}
+
+
+        {recommendationResult.bridge_programs && recommendationResult.bridge_programs.length > 0 && (
+          <div>
+            <h4 style={{ margin: '0 0 1rem 0', fontWeight: '600' }}>Bridge Programs:</h4>
+            <div style={styles.bridgeGrid}>
+              {recommendationResult.bridge_programs.map((program, index) => (
+                <div key={index} style={styles.bridgeCard}>
+                  <h5 style={{ margin: '0 0 0.5rem 0', fontWeight: '600' }}>{program.name}</h5>
+                  <p style={{ margin: 0, color: '#6B7280', fontSize: '0.875rem' }}>
+                    Composite Score: {program.composite_score}%
+                  </p>
+                  <p style={{ margin: '0.25rem 0 0 0', color: '#6B7280', fontSize: '0.75rem' }}>
+                    (Relevance to Target: {program.relevance_to_target}%)
+                  </p>
+                  <p style={{ margin: '0.25rem 0 0 0', color: '#6B7280', fontSize: '0.75rem' }}>
+                    (Relevance from Background: {program.relevance_from_background}%)
+                  </p>
                 </div>
               ))}
-            </div>
-          </div>
-        )}
-        {/* Analytics Section */}
-        {result && !isAnalyzing && (
-          <div style={styles.analyticsCard}>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 32, justifyContent: 'center' }}>
-              {/* Career Distance Analysis */}
-              <div style={{ flex: 1, minWidth: 320, maxWidth: 400 }}>
-                <div style={styles.chartTitle}>Career Distance Analysis</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={getDistanceData()}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="name" />
-                    <YAxis />
-                    <Tooltip />
-                    <Bar dataKey="distance" fill="#6c47ff" radius={[8, 8, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-                <div style={styles.chartDesc}>Lower distance = Better alignment with your background</div>
-              </div>
-              {/* Skills Radar */}
-              <div style={{ flex: 1, minWidth: 320, maxWidth: 400 }}>
-                <div style={styles.chartTitle}>Skills Compatibility</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <RadarChart data={getRadarData()}>
-                    <PolarGrid />
-                    <PolarAngleAxis dataKey="skill" />
-                    <PolarRadiusAxis angle={90} domain={[0, 100]} />
-                    <Radar name="Your Skills" dataKey="current" stroke="#6c47ff" fill="#6c47ff" fillOpacity={0.18} />
-                    <Radar name="Target Requirements" dataKey="target" stroke="#ef4444" fill="#ef4444" fillOpacity={0.13} />
-                    <Radar name="Recommended" dataKey="recommended" stroke="#10b981" fill="#10b981" fillOpacity={0.13} />
-                    <Tooltip />
-                  </RadarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-            {/* Success Metrics */}
-            <div style={styles.metricsRow}>
-              <div style={styles.metricCard}>
-                <div style={styles.metricValue}>95%</div>
-                <div style={styles.metricLabel}>Success Rate</div>
-                </div>
-              <div style={styles.metricCard}>
-                <div style={styles.metricValue}>2.3x</div>
-                <div style={styles.metricLabel}>Career Growth</div>
-                </div>
-              <div style={styles.metricCard}>
-                <div style={styles.metricValue}>₹45L</div>
-                <div style={styles.metricLabel}>Avg. Starting Salary</div>
-              </div>
             </div>
           </div>
         )}
       </div>
-    </Fragment>
+    );
+  };
+
+  // --- Inline Styles ---
+  const styles = {
+    container: {
+      minHeight: '100vh',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      fontFamily: 'Inter, system-ui, sans-serif',
+      padding: '2rem',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+    },
+    card: {
+      background: 'rgba(255, 255, 255, 0.95)',
+      backdropFilter: 'blur(20px)',
+      borderRadius: '24px',
+      padding: '2rem',
+      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.1)',
+      border: '1px solid rgba(255, 255, 255, 0.2)',
+      maxWidth: '800px',
+      width: '100%',
+      margin: '0 auto',
+      transition: 'transform 0.3s ease-in-out', // Added for subtle hover effect
+    },
+    header: {
+      textAlign: 'center',
+      marginBottom: '2rem',
+    },
+    title: {
+      fontSize: '2.5rem',
+      fontWeight: '800',
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      WebkitBackgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      marginBottom: '0.5rem',
+    },
+    subtitle: {
+      fontSize: '1.1rem',
+      color: '#6B7280',
+      fontWeight: '500',
+    },
+    inputGroup: {
+      marginBottom: '1.5rem',
+    },
+    label: {
+      display: 'block',
+      fontSize: '1rem',
+      fontWeight: '600',
+      color: '#374151',
+      marginBottom: '0.5rem',
+    },
+    select: {
+      width: '100%',
+      padding: '0.75rem 1rem',
+      border: '2px solid #E5E7EB',
+      borderRadius: '12px',
+      fontSize: '1rem',
+      transition: 'all 0.2s',
+      outline: 'none',
+      backgroundColor: 'white',
+      cursor: 'pointer',
+    },
+    input: { // Unified style for text/number inputs
+      width: '100%',
+      padding: '0.75rem 1rem',
+      border: '2px solid #E5E7EB',
+      borderRadius: '12px',
+      fontSize: '1rem',
+      transition: 'all 0.2s',
+      outline: 'none',
+      backgroundColor: 'white',
+    },
+    workRoleContainer: {
+      display: 'flex',
+      gap: '0.75rem',
+      alignItems: 'center',
+      marginBottom: '0.75rem',
+    },
+    workRoleInput: {
+      flex: 2,
+      padding: '0.75rem 1rem',
+      border: '2px solid #E5E7EB',
+      borderRadius: '12px',
+      fontSize: '1rem',
+      outline: 'none',
+      backgroundColor: 'white',
+      cursor: 'pointer',
+    },
+    yearsInput: {
+      flex: 1,
+      padding: '0.75rem 1rem',
+      border: '2px solid #E5E7EB',
+      borderRadius: '12px',
+      fontSize: '1rem',
+      outline: 'none',
+      backgroundColor: 'white',
+      minWidth: '80px',
+    },
+    button: {
+      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+      color: 'white',
+      border: 'none',
+      padding: '0.75rem 1.5rem',
+      borderRadius: '12px',
+      fontSize: '1rem',
+      fontWeight: '600',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      transition: 'all 0.2s',
+      width: '100%',
+      justifyContent: 'center',
+    },
+    addButton: {
+      background: '#10B981',
+      color: 'white',
+      border: 'none',
+      padding: '0.5rem',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.2s',
+      alignSelf: 'flex-start',
+    },
+    removeButton: {
+      background: '#EF4444',
+      color: 'white',
+      border: 'none',
+      padding: '0.5rem',
+      borderRadius: '8px',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      transition: 'all 0.2s',
+      flexShrink: 0,
+    },
+    resultCard: {
+      background: 'rgba(255, 255, 255, 0.95)',
+      backdropFilter: 'blur(20px)',
+      borderRadius: '24px',
+      padding: '2rem',
+      boxShadow: '0 20px 40px rgba(0, 0, 0, 0.1)',
+      border: '1px solid rgba(255, 255, 255, 0.2)',
+      maxWidth: '800px',
+      width: '100%',
+      margin: '2rem auto',
+      transition: 'transform 0.3s ease-in-out', // Added for subtle hover effect
+    },
+    matchHeader: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '1rem',
+      marginBottom: '1.5rem',
+    },
+    matchScore: {
+      fontSize: '2rem',
+      fontWeight: '800',
+      marginLeft: 'auto',
+    },
+    recommendationBox: {
+      background: '#F3F4F6',
+      borderRadius: '12px',
+      padding: '1rem',
+      marginBottom: '1rem',
+    },
+    bridgeGrid: {
+      display: 'grid',
+      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+      gap: '1rem',
+      marginTop: '1rem',
+    },
+    bridgeCard: {
+      background: 'rgba(249, 250, 251, 0.8)',
+      border: '1px solid #E5E7EB',
+      borderRadius: '12px',
+      padding: '1rem',
+      textAlign: 'center',
+      transition: 'all 0.2s',
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+    },
+    error: {
+      background: '#FEF2F2',
+      color: '#DC2626',
+      border: '1px solid #FECACA',
+      borderRadius: '12px',
+      padding: '1rem',
+      marginBottom: '1rem',
+      textAlign: 'center',
+    },
+    // Direct Match Confirmation Styles
+    directMatchCard: {
+      background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+      borderRadius: '24px',
+      padding: '2.5rem',
+      boxShadow: '0 20px 40px rgba(16, 185, 129, 0.3)',
+      maxWidth: '800px',
+      width: '100%',
+      margin: '2rem auto',
+      color: 'white',
+      position: 'relative',
+      overflow: 'hidden',
+      textAlign: 'center',
+      transition: 'transform 0.3s ease-in-out',
+    },
+    directMatchHeader: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '1rem',
+      marginBottom: '2rem',
+    },
+    directMatchIcon: {
+      width: '64px',
+      height: '64px',
+      color: 'white',
+    },
+    directMatchTitle: {
+      fontSize: '2.5rem',
+      fontWeight: '800',
+      margin: '0 0 0.5rem 0',
+      color: 'white',
+    },
+    directMatchMessage: {
+      fontSize: '1.2rem',
+      margin: 0,
+      opacity: 0.9,
+    },
+    directMatchScore: {
+      display: 'flex',
+      justifyContent: 'center',
+      marginBottom: '2rem',
+    },
+    scoreCircle: {
+      width: '140px',
+      height: '140px',
+      borderRadius: '50%',
+      background: 'rgba(255, 255, 255, 0.2)',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+      border: '3px solid rgba(255, 255, 255, 0.3)',
+    },
+    scoreValue: {
+      fontSize: '3rem',
+      fontWeight: '900',
+      color: 'white',
+      lineHeight: 1,
+    },
+    scoreLabel: {
+      fontSize: '1rem',
+      fontWeight: '600',
+      color: 'white',
+      opacity: 0.8,
+    },
+    directMatchAction: {
+      background: 'rgba(255, 255, 255, 0.1)',
+      borderRadius: '16px',
+      padding: '1.5rem',
+      backdropFilter: 'blur(10px)',
+    },
+    actionContent: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      gap: '1rem',
+      marginBottom: '1rem',
+    },
+    actionIcon: {
+      width: '32px',
+      height: '32px',
+      color: 'white',
+    },
+    actionTitle: {
+      fontSize: '1.5rem',
+      fontWeight: '700',
+      margin: '0 0 0.25rem 0',
+      color: 'white',
+    },
+    actionDescription: {
+      fontSize: '1rem',
+      margin: 0,
+      opacity: 0.9,
+    },
+    proceedButton: {
+      background: 'rgba(255, 255, 255, 0.2)',
+      color: 'white',
+      border: '2px solid rgba(255, 255, 255, 0.3)',
+      padding: '0.75rem 1.5rem',
+      borderRadius: '12px',
+      fontSize: '1rem',
+      fontWeight: '600',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '0.5rem',
+      transition: 'all 0.2s',
+      width: '100%',
+      justifyContent: 'center',
+    },
+    loadingOverlay: {
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.5)',
+      display: 'flex',
+      justifyContent: 'center',
+      alignItems: 'center',
+      zIndex: 1000,
+      color: 'white',
+      fontSize: '1.2rem',
+      flexDirection: 'column',
+      gap: '1rem',
+    },
+  };
+
+  if (isLoading) {
+    return (
+      <div style={styles.loadingOverlay}>
+        <Loader2 className="w-12 h-12 animate-spin" />
+        Loading application data...
+      </div>
+    );
+  }
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.card}>
+        <div style={styles.header}>
+          <h1 style={styles.title}>LeapCourse Mapper</h1>
+          <p style={styles.subtitle}>
+            Discover your optimal academic and career pathway with AI-powered recommendations
+          </p>
+        </div>
+
+        {error && (
+          <div style={styles.error}>
+            {error}
+          </div>
+        )}
+
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>
+            <GraduationCap className="inline w-5 h-5 mr-2" />
+            Educational Background
+          </label>
+          <select
+            style={styles.select}
+            value={fromSpec}
+            onChange={(e) => setFromSpec(e.target.value)}
+            onFocus={(e) => {
+              e.target.style.borderColor = '#667eea';
+              e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)';
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = '#E5E7EB';
+              e.target.style.boxShadow = 'none';
+            }}
+            disabled={isAnalyzing}
+          >
+            <option value="">Select your educational specialization</option>
+            {specializations.map(spec => (
+              <option key={spec} value={spec}>{spec}</option>
+            ))}
+          </select>
+        </div>
+
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>
+            <Brain className="inline w-5 h-5 mr-2" />
+            Work Experience (Optional)
+          </label>
+          {workRoles.map((role, index) => (
+            <div key={index} style={styles.workRoleContainer}>
+              <select
+                style={styles.workRoleInput}
+                value={role.role}
+                onChange={(e) => updateWorkRole(index, 'role', e.target.value)}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#667eea';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#E5E7EB';
+                  e.target.style.boxShadow = 'none';
+                }}
+                disabled={isAnalyzing}
+              >
+                <option value="">Select work role</option>
+                {allWorkRoles.map(workRole => (
+                  <option key={workRole} value={workRole}>{workRole}</option>
+                ))}
+              </select>
+              <input
+                type="number"
+                style={styles.yearsInput}
+                placeholder="Years"
+                value={role.years}
+                onChange={(e) => updateWorkRole(index, 'years', parseInt(e.target.value) || 0)}
+                onFocus={(e) => {
+                  e.target.style.borderColor = '#667eea';
+                  e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)';
+                }}
+                onBlur={(e) => {
+                  e.target.style.borderColor = '#E5E7EB';
+                  e.target.style.boxShadow = 'none';
+                }}
+                min="0"
+                max="50"
+                disabled={isAnalyzing}
+              />
+              <button
+                style={styles.removeButton}
+                onClick={() => removeWorkRole(index)}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-1px)';
+                  e.target.style.boxShadow = '0 4px 8px rgba(239, 68, 68, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = 'none';
+                }}
+                disabled={isAnalyzing}
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          <button
+            style={styles.addButton}
+            onClick={addWorkRole}
+            onMouseEnter={(e) => {
+              e.target.style.transform = 'translateY(-1px)';
+              e.target.style.boxShadow = '0 4px 8px rgba(16, 185, 129, 0.3)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.transform = 'translateY(0)';
+              e.target.style.boxShadow = 'none';
+            }}
+            disabled={isAnalyzing}
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div style={styles.inputGroup}>
+          <label style={styles.label}>
+            <Target className="inline w-5 h-5 mr-2" />
+            Target Specialization
+          </label>
+          <select
+            style={styles.select}
+            value={toSpec}
+            onChange={(e) => setToSpec(e.target.value)}
+            onFocus={(e) => {
+              e.target.style.borderColor = '#667eea';
+              e.target.style.boxShadow = '0 0 0 3px rgba(102, 126, 234, 0.1)';
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = '#E5E7EB';
+              e.target.style.boxShadow = 'none';
+            }}
+            disabled={isAnalyzing}
+          >
+            <option value="">Select your target specialization</option>
+            {allTargets.map(target => (
+              <option key={target} value={target}>{target}</option>
+            ))}
+          </select>
+        </div>
+
+        <button
+          style={{
+            ...styles.button,
+            opacity: (isAnalyzing || !fromSpec || !toSpec) ? 0.6 : 1,
+            cursor: (isAnalyzing || !fromSpec || !toSpec) ? 'not-allowed' : 'pointer',
+          }}
+          onClick={analyzePathway}
+          disabled={isAnalyzing || !fromSpec || !toSpec}
+          onMouseEnter={(e) => {
+            if (!isAnalyzing && fromSpec && toSpec) {
+              e.target.style.transform = 'translateY(-2px)';
+              e.target.style.boxShadow = '0 10px 20px rgba(102, 126, 234, 0.3)';
+            }
+          }}
+          onMouseLeave={(e) => {
+            if (!isAnalyzing && fromSpec && toSpec) {
+              e.target.style.transform = 'translateY(0)';
+              e.target.style.boxShadow = 'none';
+            }
+          }}
+        >
+          {isAnalyzing ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Analyzing Pathway...
+            </>
+          ) : (
+            <>
+              <Brain className="w-5 h-5" />
+              Analyze Pathway
+            </>
+          )}
+        </button>
+      </div>
+
+      {/* Render the specific direct match confirmation or general recommendation */}
+      {recommendationResult && (recommendationResult.match_type === 'direct' && recommendationResult.score >= 100
+        ? renderDirectMatchConfirmation()
+        : renderGeneralRecommendation()
+      )}
+
+      {/* Render Breakdown Chart only if not a perfect direct match */}
+      {breakdownResult && !(recommendationResult?.match_type === 'direct' && recommendationResult?.score >= 100) && (
+        <div style={styles.resultCard}>
+          <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.5rem', fontWeight: '700' }}>
+            Background Analysis
+          </h3>
+          <div style={{ marginBottom: '1rem' }}>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={breakdownResult.breakdown}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="original_input" angle={-45} textAnchor="end" height={80} interval={0} />
+                <YAxis label={{ value: 'Relevancy Score (%)', angle: -90, position: 'insideLeft' }} />
+                <Tooltip />
+                <Bar dataKey="score" fill="#667eea" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div style={styles.bridgeGrid}>
+            {breakdownResult.breakdown.map((item, index) => (
+              <div
+                key={index}
+                style={styles.bridgeCard}
+                onMouseEnter={(e) => {
+                  e.target.style.transform = 'translateY(-2px)';
+                  e.target.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.target.style.transform = 'translateY(0)';
+                  e.target.style.boxShadow = 'none';
+                }}
+              >
+                <h5 style={{ margin: '0 0 0.5rem 0', fontWeight: '600' }}>{item.type}</h5>
+                <p style={{ margin: '0 0 0.25rem 0', fontSize: '0.875rem' }}>
+                  {item.original_input} {item.specialization_matched !== item.original_input && item.specialization_matched !== "N/A" && `(Mapped to: ${item.specialization_matched})`}
+                </p>
+                <p style={{ margin: '0 0 0.25rem 0', color: '#6B7280', fontSize: '0.875rem' }}>
+                  Score: {item.score}% | Level: {item.match_level}
+                </p>
+                {item.years > 0 && (
+                  <p style={{ margin: 0, color: '#6B7280', fontSize: '0.875rem' }}>
+                    Experience: {item.years} years
+                  </p>
+                )}
+                {item.message && (
+                  <p style={{ margin: '0.5rem 0 0 0', color: '#EF4444', fontSize: '0.75rem' }}>
+                    {item.message}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
   );
 };
 
